@@ -4,15 +4,19 @@ pragma solidity ^0.8.0;
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721Enumerable.sol";
-import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
 import "@openzeppelin/contracts/access/AccessControl.sol";
 
-contract VeriDegree is ERC721, ERC721Enumerable, ERC721URIStorage, AccessControl {
+contract VeriDegree is ERC721, ERC721Enumerable, AccessControl {
     bytes32 public constant MINTER_ROLE = keccak256("MINTER_ROLE");
     uint256 private _nextTokenId;
-    error Soulbound();
+    mapping(uint256 => string) private _tokenURIs;
 
-    constructor(string memory name, string memory symbol) ERC721(name, symbol) {
+    error Soulbound();
+    error NonexistentToken();
+
+    constructor(string memory name, string memory symbol)
+        ERC721(name, symbol)
+    {
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
         _grantRole(MINTER_ROLE, msg.sender);
         _nextTokenId = 1;
@@ -26,7 +30,7 @@ contract VeriDegree is ERC721, ERC721Enumerable, ERC721URIStorage, AccessControl
         tokenId = _nextTokenId;
         _nextTokenId++;
         _safeMint(to, tokenId);
-        _setTokenURI(tokenId, uri);
+        _tokenURIs[tokenId] = uri;
     }
 
     function approve(address, uint256) public pure override(ERC721, IERC721) {
@@ -72,16 +76,17 @@ contract VeriDegree is ERC721, ERC721Enumerable, ERC721URIStorage, AccessControl
     function tokenURI(uint256 tokenId)
         public
         view
-        override(ERC721, ERC721URIStorage)
+        override(ERC721)
         returns (string memory)
     {
-        return super.tokenURI(tokenId);
+        if (_ownerOf(tokenId) == address(0)) revert NonexistentToken();
+        return _tokenURIs[tokenId];
     }
 
     function supportsInterface(bytes4 interfaceId)
         public
         view
-        override(ERC721, ERC721Enumerable, ERC721URIStorage, AccessControl)
+        override(ERC721, ERC721Enumerable, AccessControl)
         returns (bool)
     {
         return super.supportsInterface(interfaceId);
