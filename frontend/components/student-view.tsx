@@ -1,12 +1,11 @@
 "use client";
 
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { type Address } from "viem";
 import { useAccount, usePublicClient, useReadContract } from "wagmi";
 import { veridegreeAbi, veridegreeAddress } from "@/lib/veridegree";
-import { useBalance } from "@/hooks/use-balance";
 import { besuQbft } from "@/lib/wagmi";
 
 type DiplomaMetadata = {
@@ -37,9 +36,9 @@ async function readMetadata(tokenUri: string): Promise<DiplomaMetadata | undefin
 }
 
 export function StudentView() {
+  const router = useRouter();
   const { address, isConnected } = useAccount();
   const publicClient = usePublicClient({ chainId: besuQbft.id });
-  const balance = useBalance();
 
   const [viewerAddress, setViewerAddress] = useState<string>("");
   const [status, setStatus] = useState<string>("");
@@ -56,6 +55,35 @@ export function StudentView() {
     functionName: "totalMinted",
     query: { refetchInterval: 4000 },
   });
+
+  const { data: minterRole } = useReadContract({
+    address: veridegreeAddress,
+    abi: veridegreeAbi,
+    functionName: "MINTER_ROLE",
+  });
+
+  const { data: isAdmin } = useReadContract({
+    address: veridegreeAddress,
+    abi: veridegreeAbi,
+    functionName: "hasRole",
+    args: minterRole && address ? [minterRole, address] : undefined,
+    query: {
+      enabled: Boolean(isConnected && address && minterRole),
+    },
+  });
+
+  useEffect(() => {
+    if (!isConnected) {
+      router.replace("/");
+    }
+  }, [isConnected, router]);
+
+  useEffect(() => {
+    if (!isConnected || !address || !minterRole || isAdmin === undefined) return;
+    if (isAdmin) {
+      router.replace("/admin");
+    }
+  }, [isConnected, address, minterRole, isAdmin, router]);
 
   async function loadStudentDiplomas() {
     if (!publicClient) return;
@@ -112,12 +140,6 @@ export function StudentView() {
         </div>
         <ConnectButton showBalance={false} chainStatus={'none'} />
       </header>
-
-      <nav className="flex gap-2 text-sm">
-        <Link className="underline" href="/">Accueil</Link>
-        <span>-</span>
-        <Link className="underline" href="/admin">Page Admin</Link>
-      </nav>
 
       <section className="grid gap-4 rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
         <h2 className="text-xl font-medium">Mes diplômes</h2>

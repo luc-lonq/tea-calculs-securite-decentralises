@@ -1,14 +1,13 @@
 "use client";
 
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { type Address } from "viem";
-import { useAccount, useSwitchChain, useWriteContract } from "wagmi";
+import { useAccount, useReadContract, useSwitchChain, useWriteContract } from "wagmi";
 import { besuQbft } from "@/lib/wagmi";
 import { veridegreeAbi, veridegreeAddress } from "@/lib/veridegree";
 import { useAddBesuChain } from "@/hooks/use-add-besu-chain";
-import { useBalance } from "@/hooks/use-balance";
 
 async function uploadToIpfs(blob: Blob, fileName: string) {
   const formData = new FormData();
@@ -31,11 +30,11 @@ async function uploadToIpfs(blob: Blob, fileName: string) {
 }
 
 export function AdminView() {
+  const router = useRouter();
   const { address, chainId, isConnected } = useAccount();
   const { switchChain } = useSwitchChain();
-  const { writeContractAsync, isPending } = useWriteContract();
+  const { mutateAsync: writeContractAsync, isPending } = useWriteContract();
   const addBesuChain = useAddBesuChain();
-  const balance = useBalance();
 
   const [recipient, setRecipient] = useState<string>("");
   const [diplomaName, setDiplomaName] = useState<string>("");
@@ -43,13 +42,41 @@ export function AdminView() {
   const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [status, setStatus] = useState<string>("");
 
+  const { data: minterRole } = useReadContract({
+    address: veridegreeAddress,
+    abi: veridegreeAbi,
+    functionName: "MINTER_ROLE",
+  });
+
+  const { data: isAdmin } = useReadContract({
+    address: veridegreeAddress,
+    abi: veridegreeAbi,
+    functionName: "hasRole",
+    args: minterRole && address ? [minterRole, address] : undefined,
+    query: {
+      enabled: Boolean(isConnected && address && minterRole),
+    },
+  });
+
   useEffect(() => {
+    if (!isConnected) {
+      router.replace("/");
+      return;
+    }
+
     if (isConnected && chainId !== besuQbft.id) {
       addBesuChain().catch(() => {
         // user can switch manually
       });
     }
-  }, [isConnected, chainId, addBesuChain]);
+  }, [isConnected, chainId, addBesuChain, router]);
+
+  useEffect(() => {
+    if (!isConnected || !address || !minterRole || isAdmin === undefined) return;
+    if (!isAdmin) {
+      router.replace("/student");
+    }
+  }, [isConnected, address, minterRole, isAdmin, router]);
 
   const currentRecipient = useMemo(
     () => (recipient.trim() || address || "") as Address | "",
@@ -127,12 +154,6 @@ export function AdminView() {
         </div>
         <ConnectButton showBalance={false} chainStatus={'none'} />
       </header>
-
-      <nav className="flex gap-2 text-sm">
-        <Link className="underline" href="/">Accueil</Link>
-        <span>-</span>
-        <Link className="underline" href="/student">Page Étudiant</Link>
-      </nav>
 
       {chainId !== besuQbft.id ? (
         <section className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
