@@ -1,17 +1,20 @@
 import { useCallback } from "react";
-import { usePublicClient } from "wagmi";
 import { besuQbft } from "@/lib/wagmi";
 
-export function useAddBesuChain() {
-  const publicClient = usePublicClient();
+type EthereumProvider = {
+  request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
+};
 
+export function useAddBesuChain() {
   return useCallback(async () => {
-    if (!window.ethereum) {
+    const ethereum = (window as Window & { ethereum?: EthereumProvider }).ethereum;
+
+    if (!ethereum) {
       throw new Error("MetaMask not found");
     }
 
     try {
-      await window.ethereum.request({
+      await ethereum.request({
         method: "wallet_addEthereumChain",
         params: [
           {
@@ -28,10 +31,10 @@ export function useAddBesuChain() {
       });
       return true;
     } catch (error) {
-      if ((error as any).code === 4001) {
+      if ((error as { code?: number }).code === 4001) {
         throw new Error("User rejected adding chain");
       }
       throw error;
     }
-  }, [publicClient]);
+  }, []);
 }

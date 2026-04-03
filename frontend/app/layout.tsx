@@ -16,7 +16,6 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "VeriDegree",
-  description: "Soulbound Academic Diplomas on Besu QBFT",
 };
 
 export default function RootLayout({
