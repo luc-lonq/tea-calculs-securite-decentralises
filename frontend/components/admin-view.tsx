@@ -4,10 +4,38 @@ import { useRouter } from "next/navigation";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { type Address } from "viem";
-import { useAccount, useReadContract, useSwitchChain, useWriteContract } from "wagmi";
+import { useAccount, usePublicClient, useReadContract, useSwitchChain, useWriteContract } from "wagmi";
 import { besuQbft } from "@/lib/wagmi";
 import { veridegreeAbi, veridegreeAddress } from "@/lib/veridegree";
 import { useAddBesuChain } from "@/hooks/use-add-besu-chain";
+
+type DiplomaMetadata = {
+  name?: string;
+  description?: string;
+  file?: string;
+};
+
+type AdminDiploma = {
+  tokenId: bigint;
+  owner: Address;
+  tokenUri: string;
+  metadata?: DiplomaMetadata;
+  pdfUrl?: string;
+};
+
+function ipfsToHttp(uri: string) {
+  if (!uri.startsWith("ipfs://")) return uri;
+  const cid = uri.replace("ipfs://", "");
+  return `http://127.0.0.1:8080/ipfs/${cid}`;
+}
+
+async function readMetadata(tokenUri: string): Promise<DiplomaMetadata | undefined> {
+  const metadataResponse = await fetch(ipfsToHttp(tokenUri));
+  if (!metadataResponse.ok) {
+    return undefined;
+  }
+  return (await metadataResponse.json()) as DiplomaMetadata;
+}
 
 async function uploadToIpfs(blob: Blob, fileName: string) {
   const formData = new FormData();
@@ -32,6 +60,7 @@ async function uploadToIpfs(blob: Blob, fileName: string) {
 export function AdminView() {
   const router = useRouter();
   const { address, chainId, isConnected } = useAccount();
+  const publicClient = usePublicClient({ chainId: besuQbft.id });
   const { switchChain } = useSwitchChain();
   const { mutateAsync: writeContractAsync, isPending } = useWriteContract();
   const addBesuChain = useAddBesuChain();
@@ -39,6 +68,8 @@ export function AdminView() {
   const [recipient, setRecipient] = useState<string>("");
   const [diplomaName, setDiplomaName] = useState<string>("");
   const [diplomaDescription, setDiplomaDescription] = useState<string>("");
+  const [lookupAddress, setLookupAddress] = useState<string>("");
+  const [adminDiplomas, setAdminDiplomas] = useState<AdminDiploma[]>([]);
   const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [status, setStatus] = useState<string>("");
 
@@ -82,6 +113,95 @@ export function AdminView() {
     () => (recipient.trim() || address || "") as Address | "",
     [recipient, address],
   );
+
+  const currentLookupAddress = useMemo(
+    () => lookupAddress.trim() as Address | "",
+    [lookupAddress],
+  );
+
+  async function readDiploma(tokenId: bigint): Promise<AdminDiploma> {
+    if (!publicClient) {
+      throw new Error("Client RPC indisponible.");
+    }
+
+    const owner = (await publicClient.readContract({
+      address: veridegreeAddress,
+      abi: veridegreeAbi,
+      functionName: "ownerOf",
+      args: [tokenId],
+    })) as Address;
+
+    const tokenUri = (await publicClient.readContract({
+      address: veridegreeAddress,
+      abi: veridegreeAbi,
+      functionName: "tokenURI",
+      args: [tokenId],
+    })) as string;
+
+    const metadata = await readMetadata(tokenUri);
+    const pdfUrl = metadata?.file ? ipfsToHttp(metadata.file) : undefined;
+    return { tokenId, owner, tokenUri, metadata, pdfUrl };
+  }
+
+  async function loadAllDiplomas() {
+    if (!publicClient) return;
+
+    try {
+      setStatus("Lecture de tous les diplômes...");
+      const totalMinted = (await publicClient.readContract({
+        address: veridegreeAddress,
+        abi: veridegreeAbi,
+        functionName: "totalMinted",
+      })) as bigint;
+
+      const diplomas: AdminDiploma[] = [];
+      for (let tokenId = BigInt(1); tokenId <= totalMinted; tokenId++) {
+        diplomas.push(await readDiploma(tokenId));
+      }
+
+      setAdminDiplomas(diplomas);
+      setStatus(`Chargement admin terminé (${diplomas.length} diplôme(s)).`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Erreur inconnue";
+      setStatus(`Erreur lecture admin: ${message}`);
+    }
+  }
+
+  async function loadDiplomasByAddress() {
+    if (!publicClient) return;
+    if (!currentLookupAddress) {
+      setStatus("Adresse à rechercher invalide.");
+      return;
+    }
+
+    try {
+      setStatus("Lecture des diplômes pour l'adresse demandée...");
+      const ownerBalance = (await publicClient.readContract({
+        address: veridegreeAddress,
+        abi: veridegreeAbi,
+        functionName: "balanceOf",
+        args: [currentLookupAddress],
+      })) as bigint;
+
+      const diplomas: AdminDiploma[] = [];
+      for (let i = BigInt(0); i < ownerBalance; i++) {
+        const tokenId = (await publicClient.readContract({
+          address: veridegreeAddress,
+          abi: veridegreeAbi,
+          functionName: "tokenOfOwnerByIndex",
+          args: [currentLookupAddress, i],
+        })) as bigint;
+
+        diplomas.push(await readDiploma(tokenId));
+      }
+
+      setAdminDiplomas(diplomas);
+      setStatus(`Chargement admin terminé (${diplomas.length} diplôme(s)).`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Erreur inconnue";
+      setStatus(`Erreur lecture admin: ${message}`);
+    }
+  }
 
   async function handleMint(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -220,6 +340,63 @@ export function AdminView() {
             {isPending ? "Upload en cours..." : "Uploader"}
           </button>
         </form>
+      </section>
+
+      <section className="grid gap-4 rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
+        <h2 className="text-xl font-medium">Consultation admin</h2>
+
+        <div className="flex flex-wrap gap-3">
+          <button
+            type="button"
+            onClick={loadAllDiplomas}
+            className="rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+          >
+            Voir tous les diplômes
+          </button>
+
+          <input
+            value={lookupAddress}
+            onChange={(event) => setLookupAddress(event.target.value)}
+            placeholder="0x..."
+            className="min-w-[280px] flex-1 rounded-md border border-zinc-300 bg-transparent px-3 py-2 text-sm dark:border-zinc-700"
+          />
+
+          <button
+            type="button"
+            onClick={loadDiplomasByAddress}
+            className="rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+          >
+            Voir cette adresse
+          </button>
+        </div>
+
+        <div className="grid gap-4">
+          {adminDiplomas.map((token) => (
+            <article
+              key={token.tokenId.toString()}
+              className="rounded-lg border border-zinc-200 p-4 text-sm dark:border-zinc-800"
+            >
+              <p className="font-medium">Token #{token.tokenId.toString()}</p>
+              <p className="break-all text-zinc-600 dark:text-zinc-400">Owner: {token.owner}</p>
+              <p className="break-all text-zinc-600 dark:text-zinc-400">Metadata: {token.tokenUri}</p>
+
+              {token.metadata?.name ? <p className="mt-2">Titre: {token.metadata.name}</p> : null}
+              {token.metadata?.description ? (
+                <p className="text-zinc-600 dark:text-zinc-400">Description: {token.metadata.description}</p>
+              ) : null}
+
+              {token.pdfUrl ? (
+                <a href={token.pdfUrl} target="_blank" rel="noreferrer" className="mt-3 inline-block underline">
+                  Ouvrir le PDF dans un nouvel onglet
+                </a>
+              ) : (
+                <p className="mt-2 text-zinc-600 dark:text-zinc-400">
+                  PDF introuvable dans les métadonnées IPFS pour ce diplôme.
+                </p>
+              )}
+            </article>
+          ))}
+        </div>
       </section>
 
       {status ? (

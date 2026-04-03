@@ -2,8 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
-import { useEffect, useMemo, useState } from "react";
-import { type Address } from "viem";
+import { useEffect, useState } from "react";
 import { useAccount, usePublicClient, useReadContract } from "wagmi";
 import { veridegreeAbi, veridegreeAddress } from "@/lib/veridegree";
 import { besuQbft } from "@/lib/wagmi";
@@ -40,14 +39,8 @@ export function StudentView() {
   const { address, isConnected } = useAccount();
   const publicClient = usePublicClient({ chainId: besuQbft.id });
 
-  const [viewerAddress, setViewerAddress] = useState<string>("");
   const [status, setStatus] = useState<string>("");
   const [studentTokens, setStudentTokens] = useState<StudentDiploma[]>([]);
-
-  const currentViewer = useMemo(
-    () => (viewerAddress.trim() || address || "") as Address | "",
-    [viewerAddress, address],
-  );
 
   const { data: totalMinted } = useReadContract({
     address: veridegreeAddress,
@@ -87,8 +80,8 @@ export function StudentView() {
 
   async function loadStudentDiplomas() {
     if (!publicClient) return;
-    if (!currentViewer) {
-      setStatus("Adresse étudiant invalide.");
+    if (!address) {
+      setStatus("Wallet non connecté.");
       return;
     }
 
@@ -98,7 +91,7 @@ export function StudentView() {
         address: veridegreeAddress,
         abi: veridegreeAbi,
         functionName: "balanceOf",
-        args: [currentViewer],
+        args: [address],
       })) as bigint;
 
       const diplomas: StudentDiploma[] = [];
@@ -107,7 +100,7 @@ export function StudentView() {
           address: veridegreeAddress,
           abi: veridegreeAbi,
           functionName: "tokenOfOwnerByIndex",
-          args: [currentViewer, i],
+          args: [address, i],
         })) as bigint;
 
         const tokenUri = (await publicClient.readContract({
@@ -144,21 +137,13 @@ export function StudentView() {
       <section className="grid gap-4 rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
         <h2 className="text-xl font-medium">Mes diplômes</h2>
 
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-          <input
-            value={viewerAddress}
-            onChange={(event) => setViewerAddress(event.target.value)}
-            placeholder={address ?? "0x..."}
-            className="w-full rounded-md border border-zinc-300 bg-transparent px-3 py-2 text-sm dark:border-zinc-700"
-          />
-          <button
-            type="button"
-            onClick={loadStudentDiplomas}
-            className="w-fit rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
-          >
-            Charger
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={loadStudentDiplomas}
+          className="w-fit rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+        >
+          Charger mes diplômes
+        </button>
 
         <p className="text-sm text-zinc-600 dark:text-zinc-400">
           Total mintés: {totalMinted ? totalMinted.toString() : "0"}

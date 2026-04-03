@@ -63,4 +63,11 @@ export const veridegreeAbi = [
     inputs: [{ name: "tokenId", type: "uint256" }],
     outputs: [{ name: "", type: "string" }],
   },
+  {
+    type: "function",
+    name: "ownerOf",
+    stateMutability: "view",
+    inputs: [{ name: "tokenId", type: "uint256" }],
+    outputs: [{ name: "", type: "address" }],
+  },
 ] as const;
