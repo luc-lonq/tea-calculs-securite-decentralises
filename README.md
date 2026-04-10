@@ -22,17 +22,9 @@ Student connects wallet. Sees only their own diplomas. Click one -> metadata + P
 - Node 18+, npm
 - Foundry (`foundryup` to install)
 - IPFS Kubo (`go-ipfs`)
-- Docker (for Besu QBFT)
 - MetaMask or any wallet
 
-## Run it locally (Besu QBFT)
-
-### 1. Start Besu QBFT network
-
-```bash
-cd QBFT-Network
-docker compose up -d
-```
+/!\ Require a Besu Network to work.
 
 Verify RPC:
 
@@ -58,8 +50,8 @@ API on `:5001`, gateway on `:8080`.
 cd contracts/
 cp .env.example .env
 # edit .env and set PRIVATE_KEY, VERIDEGREE_ADMIN, VERIDEGREE_MINTER
-source .env
 
+source .env
 forge script script/Deploy.s.sol \
   --rpc-url "$RPC_URL" \
   --broadcast \
@@ -79,7 +71,7 @@ cp .env.local.example .env.local 2>/dev/null || true
 
 ```bash
 cd frontend/
-npm install
+npm i
 npm run dev
 ```
 
